@@ -192,7 +192,7 @@ if __name__ == '__main__':
 	parser.add_argument('--profile', help='Provide a valid profile and bypass auto-detection.')
 	parser.add_argument('--kdbgoffset', help='Provide a valid kdbg offset and bypass auto-detection.')
 	parser.add_argument('image_files', help='Path to memory image(s)', nargs='+')
-	parser.add_argument('output_directory', help='Path to output direcctory.')
+	parser.add_argument('output_directory', help='Path to output directory.')
 	args = parser.parse_args()
 
 	if args.invocation:
