@@ -7,8 +7,7 @@ import subprocess
 import sys
 import time
 
-logging.basicConfig(level=logging.DEBUG, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 ALL_PROFILES = [
 	'VistaSP0x64',
@@ -45,86 +44,42 @@ ALL_PROFILES = [
 	'WinXPSP1x64',
 	'WinXPSP2x64',
 	'WinXPSP2x86',
-	'WinXPSP3x86']
+	'WinXPSP3x86'
+]
 
 BASE_PLUGINS = [
 	'pslist',
-	'pstree',
-	'psscan',
-	'dlllist',
-	'handles',
-	'getsids',
-	'cmdscan',
-	'consoles',
-	'privs',
-	'envars',
-	'verinfo',
-	'enumfunc',
-	'memmap',
-	'vadinfo',
-	'vadwalk',
-	'vadtree',
-	'iehistory',
-	'modules',
-	'modscan',
-	'ssdt',
-	'driverscan',
-	'filescan',
-	'mutantscan',
-	'symlinkscan',
-	'thrdscan',
-	'unloadedmodules',
-	'hivescan',
-	'hivelist',
-	'psxview',
-	'malfind',
-	'sessions',
-	'wndscan',
-	'deskscan',
-	'atomscan',
-	'clipboard',
-	'eventhooks',
-	'gahti',
-	'messagehooks',
-	'userhandles',
-	'gditimers',
-	'windows',
-	'wintree',
-	'svcscan',
-	'ldrmodules',
-	'apihooks',
-	'idt',
-	'gdt',
-	'threads',
-	'callbacks',
-	'devicetree',
-	'timers']
+	]
 
 XP2003_PLUGINS = [
-	'evtlogs',
-	'connections',
-	'connscan',
-	'sockets',
-	'sockscan']
+	# 'evtlogs',
+	# 'connections',
+	# 'connscan',
+	# 'sockets',
+	# 'sockscan'
+]
 
 VISTA_WIN2008_WIN7_PLUGINS = [
-	'netscan',
-	'userassist',
-	'shellbags',
-	'shimcache',
-	'getservicesids']
+	# 'netscan',
+	# 'userassist',
+	# 'shellbags',
+	# 'shimcache',
+	# 'getservicesids'
+]
 
 class MemoryImage(object):
 	def __init__(self, invocation, image_path, profile, kdbg, master_output_directory, plugins_list):
 		self.invocation = invocation
-		self.basename = os.path.basename(image_path)
+		self.basename = os.path.basename(image_path) 					# Ex: DC011.raw
+		# Image_name removes the file extension
+		self.image_name = '.'.join(self.basename.split('.')[:-1])		# Ex: DC011
 		self.abspath = os.path.abspath(image_path)
-		self.output_directory = os.path.join(master_output_directory, self.basename)
+		self.output_directory = os.path.join(master_output_directory, self.image_name)
 		self.profile = profile
 		self.kdbg = kdbg
 		self.valid_plugins = []
 
-		# Test for existence of output directory
+		# Create output directory if it doesn't exist
 		if not os.path.exists(self.output_directory):
 			os.makedirs(self.output_directory)  
 		    
@@ -137,18 +92,20 @@ class MemoryImage(object):
 		# If either the profile or the kdbg offset are not provided,
 		# initiate imageinfo plugin.
 		if not self.profile or not self.kdbg:
-			output_filename = 'imageinfo_' +  self.basename
+			logging.info('[{0}] Determining profile...'.format(self.basename))
+			output_filename = f'{self.image_name}_imageinfo.txt'
 			output_path = os.path.join(self.output_directory, output_filename)
 
-			data = subprocess.check_output([self.invocation, '-f', self.abspath, 'imageinfo'])
+			result_bytes = subprocess.check_output([self.invocation, '-f', self.abspath, 'imageinfo'])
+			result_str = str(result_bytes)
 
-			with open(output_path, 'w') as output:
-				output.write(data)
+			with open(output_path, 'wb') as output:
+				output.write(result_bytes)
 
-			profiles_regex = re.search('Suggested Profile\(s\) : ([^\n]*)',  data)
+			profiles_regex = re.search('Suggested Profile\(s\) : ([^\n]*)',  result_str)
 			auto_profiles = profiles_regex.group(1).split(', ')
 
-			kdbg_regex = re.search('KDBG : ([^\n]*)', data)
+			kdbg_regex = re.search(r'KDBG : (0x[a-fA-F0-9]*)', result_str)
 			auto_kdbg = kdbg_regex.group(1)
 
 		# If not already provided, select the first suggested profile
@@ -159,6 +116,7 @@ class MemoryImage(object):
 		if not self.kdbg:
 			self.kdbg = auto_kdbg
 
+		# Populate plugin list for relevant OS type
 		if plugins_list:
 			with open(plugins_list, 'r') as ifile:
 				for line in ifile:
@@ -176,7 +134,14 @@ class MemoryImage(object):
 		for plugin in self.valid_plugins:
 			logging.info('[{0}] Queuing plugin: {1}'.format(self.basename, plugin.strip('\n')))
 
+
 def generate_future_tasks(image):
+	"""
+	Generator function that produces a command to run every valid plugin against an image.
+
+	Arguments:
+		- image (MemoryImage)
+	"""
 	for plugin in image.valid_plugins:
 		if len(plugin.split(' ')) > 1:
 			plugin_name = plugin.split(' ')[0].strip('\n')
@@ -185,10 +150,19 @@ def generate_future_tasks(image):
 			plugin_name = plugin.strip('\n')
 			plugin_flags = []
 
-		output_filename = plugin_name + '_' +  image.basename + '.txt'
+		print("PLUGIN NAME: ", plugin_name)
+		print('IMAGE NAME: ', image.image_name)
+
+		output_filename = f'{image.image_name}_{plugin_name}.txt'
 		output_path = os.path.join(image.output_directory, output_filename)
 
-		commandline = [invocation, '-f', image.abspath, '--profile=' + profile, '--kdbg=' + image.kdbg, plugin_name]
+		commandline = [
+			image.invocation,
+			'-f', image.abspath,
+			'--profile=' + image.profile,
+			'--kdbg=' + image.kdbg,
+			plugin_name
+		]
 		commandline += plugin_flags
 
 		yield {'image_basename': image.basename, 
@@ -217,8 +191,8 @@ if __name__ == '__main__':
 	parser.add_argument('--readlist', help='Flag to read from a list of plugins rather than auto-detecting valid plugins.')
 	parser.add_argument('--profile', help='Provide a valid profile and bypass auto-detection.')
 	parser.add_argument('--kdbgoffset', help='Provide a valid kdbg offset and bypass auto-detection.')
+	parser.add_argument('image_files', help='Path to memory image(s)', nargs='+')
 	parser.add_argument('output_directory', help='Path to output direcctory.')
-	parser.add_argument('imagefiles', help='Path to memory image(s)', nargs='+')
 	args = parser.parse_args()
 
 	if args.invocation:
@@ -237,7 +211,7 @@ if __name__ == '__main__':
 	tasks = []
 	workers = []
 
-	for image_path in args.imagefiles:
+	for image_path in args.image_files:
 		image = MemoryImage(invocation, image_path, profile, kdbg, 
 			master_output_directory, plugins_list)
 		tasks.extend([task for task in generate_future_tasks(image)])

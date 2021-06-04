@@ -5,13 +5,11 @@ Run all available Volatility plugins on a target image file.
 
 Syntax:
 
-python bulk_volatility_scanner.py --help
-
-usage: bulk_volatility_scanner.py [-h] imagefile outputdirectory
+python bulk_vol.py image_files output_directory
 
 positional arguments:
-  imagefile           Path to Memory Image
-  outputdirectory     Path to Output Directory
+  image_files           Path to Memory Image(s)
+  output_directory      Path to Output Directory
 
 optional arguments:
   -h, --help  show this help message and exit
