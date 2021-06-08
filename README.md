@@ -1,15 +1,13 @@
-bulk_volatility_scanner
+Bulk Volatility Scanner
 =======================
 
-Run all available Volatility plugins on a target image file.
+Run targeted Volatility plugins on one or more memory images and save the results for analysis.
 
-Syntax:
-
-python bulk_vol.py image_files output_directory
+Syntax: `python3 bulk_vol.py --output_dir=/desired/output/directory MemoryImage1.raw MemoryImage2.raw
 
 positional arguments:
-  image_files           Path to Memory Image(s)
-  output_directory      Path to Output Directory
+  image_files     Path to Memory Image(s)
+  output_dir      Path to Output Directory
 
 optional arguments:
   -h, --help  show this help message and exit

@@ -76,7 +76,9 @@ SUPPORTED_PROFILES = [
 
 BASE_PLUGINS = [
 	'pslist',
-	]
+	'pstree',
+	'psxview'
+]
 
 XP2003_PLUGINS = [
 	# 'evtlogs',
