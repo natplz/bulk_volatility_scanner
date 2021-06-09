@@ -75,25 +75,60 @@ SUPPORTED_PROFILES = [
 ]
 
 BASE_PLUGINS = [
+	# Step 1: Identify Rogue Processes
+	'malprocfind',
 	'pslist',
+	'psscan',
 	'pstree',
-	'psxview'
+
+	# Step 2: Analyze process DLLs and Handles
+	'cmdline',
+	'dlllist',
+	'getsids',
+	'handles',
+	'mutantscan',
+	'svcscan',
+
+	# Step 4: Look for evidence of code injection
+	'hollowfind',
+	'ldrmodules',
+	'malfind',
+
+	# Step 5: Check for a rootkit
+	'apihooks',
+	'driverirp',
+	'idt',
+	'modscan',
+	'psxview',
+	'ssdt',
+
+	# Step 6: Dump suspicious processes and drivers
+	'cmdscan',
+	'consoles',
+	'filescan',
+	
+	# TODO: Implement plugins requiring additional arguments
+	# 'dlldump',
+	# 'dumpfiles',
+	# 'memdump',
+	# 'moddump',
+	# 'procdump',
+	# 'processbl',
+	# 'servicebl',
+
 ]
 
 XP2003_PLUGINS = [
-	# 'evtlogs',
-	# 'connections',
-	# 'connscan',
-	# 'sockets',
-	# 'sockscan'
+	# Step 3: Review network artifacts
+	'connections',
+	'connscan',
+	'sockets',
+	'sockscan',
 ]
 
 VISTA_WIN2008_WIN7_PLUGINS = [
-	# 'netscan',
-	# 'userassist',
-	# 'shellbags',
-	# 'shimcache',
-	# 'getservicesids'
+	# Step 3: Review network artifacts
+	'netscan',
 ]
 
 DEFAULT_OUTPUT_DIR = './'
