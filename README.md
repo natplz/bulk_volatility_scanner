@@ -8,16 +8,16 @@ Run targeted Volatility plugins on one or more memory images, and save the resul
 
 
 #### Positional arguments:
--  image_files     Path(s) to memory image(s). Each positional argument will be treated as a separate memory image.
+-  image_files     &nbsp; Path(s) to memory image(s). Each positional argument will be treated as a separate memory image.
 
 
 #### Optional arguments:
--  --output_dir    Path to directory where output will be saved. Default is './'
--  --invocation    Path to Volatility2 command. Default is 'vol.py'
--  --profile       Provide a valid profile and KDBG offset to bypass profile auto-detection.
--  --kdbg          Provide a valid profile and KDBG offset to bypass profile auto-detection. Example of valid KDBG offset: 0x8273cb78 
--  --readlist      List of plugins to run a memory image against. If not specified, plugins will be selected automatically.
--  -h, --help      Show this help message and exit
+-  --output_dir    &nbsp; Path to directory where output will be saved. Default is './'
+-  --invocation    &nbsp; Path to Volatility2 command. Default is 'vol.py'
+-  --profile       &nbsp; Provide a valid profile and KDBG offset to bypass profile auto-detection.
+-  --kdbg          &nbsp; Provide a valid profile and KDBG offset to bypass profile auto-detection. Example of valid KDBG offset: 0x8273cb78 
+-  --readlist      &nbsp; List of plugins to run a memory image against. If not specified, plugins will be selected automatically.
+-  -h, --help      &nbsp; Show this help message and exit
 
 
 #### Notes:
