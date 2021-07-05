@@ -9,6 +9,8 @@ import time
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
+DUMP_DIR_FLAG = '--dump-dir='
+
 SUPPORTED_PROFILES = [
 	"VistaSP0x64",
 	"VistaSP0x86",
@@ -102,23 +104,19 @@ BASE_PLUGINS = [
 	'psxview',
 	'ssdt',
 
-	# Step 6: Dump suspicious processes and drivers
+	# # Step 6: Dump suspicious processes and drivers
 	'cmdscan',
 	'consoles',
+	f'dlldump {DUMP_DIR_FLAG}',
+	f'dumpfiles {DUMP_DIR_FLAG}',
 	'filescan',
-	
-	# TODO: Implement plugins requiring additional arguments
-	# 'dlldump',
-	# 'dumpfiles',
-	# 'memdump',
-	# 'moddump',
-	# 'procdump',
-	# 'processbl',
-	# 'servicebl',
-
+	f'memdump {DUMP_DIR_FLAG}',
+	f'moddump {DUMP_DIR_FLAG}',
+	f'procdump {DUMP_DIR_FLAG}',
 ]
 
-XP2003_PLUGINS = [
+# Plugins that run on Windows XP and Windows Server 2003
+OLDER_WINDOWS_PLUGINS = [
 	# Step 3: Review network artifacts
 	'connections',
 	'connscan',
@@ -126,13 +124,22 @@ XP2003_PLUGINS = [
 	'sockscan',
 ]
 
-VISTA_WIN2008_WIN7_PLUGINS = [
+# Plugins that run on Vista, Windows 7, Windows 8, Windows 10, and Windows Server 2008+
+NEWER_WINDOWS_PLUGINS = [
+
 	# Step 3: Review network artifacts
 	'netscan',
 ]
 
+ALL_PLUGINS = [
+	*BASE_PLUGINS,
+	*OLDER_WINDOWS_PLUGINS,
+	*NEWER_WINDOWS_PLUGINS
+]
+
 DEFAULT_OUTPUT_DIR = './'
 DEFAULT_VOL_INVOCATION = 'vol.py'
+DEFAULT_EXTRACT_ARTIFACTS = False
 MAX_SIMULTANEOUS_WORKERS = 6
 
 
@@ -143,7 +150,8 @@ class MemoryImage(object):
 	Initializing a class will run Volatility imageinfo plugin to determine profile and KDBG offset,
 	if they are not explicitly provided.
 	"""
-	def __init__(self, invocation, image_path, profile, kdbg, master_output_directory, plugins_list):
+	def __init__(self, invocation, image_path, profile, kdbg, master_output_directory,
+				 plugins_list, extract_artifacts):
 		self.invocation = invocation
 		# Basename contains file extension (ex: DC011.raw)
 		self.basename = os.path.basename(image_path)
@@ -153,6 +161,7 @@ class MemoryImage(object):
 		self.output_directory = os.path.join(master_output_directory, self.image_name)
 		self.profile = profile
 		self.kdbg = kdbg
+		self.extract_artifacts = extract_artifacts
 		self.valid_plugins = []
 
 		# Create output directory if it doesn't exist
@@ -162,7 +171,7 @@ class MemoryImage(object):
 		# If the provided profile is invalid, exit program
 		if self.profile:
 			if not self.profile in SUPPORTED_PROFILES:
-				logging.error('[{0}] Invalid profile {1} selected'.format(self.basename, args.profile))
+				logging.error('[{0}] Invalid profile {1} selected'.format(self.basename, self.profile))
 				sys.exit()
 
 		# If either the profile or the kdbg offset are not provided,
@@ -187,28 +196,41 @@ class MemoryImage(object):
 		# If not already provided, select the first suggested profile
 		if not self.profile:
 			self.profile = auto_profiles[0]
+		logging.info('[{0}] Selected Profile: {1}'.format(self.basename, self.profile))
 		
 		# If not already provided, select the first returned kdbg offset
 		if not self.kdbg:
 			self.kdbg = auto_kdbg
+		logging.info('[{0}] Selected KDBG Offset: {1}'.format(self.basename, self.kdbg))
 
 		# Populate plugin list for relevant OS type
+		self.populate_valid_plugins(plugins_list)
+		for plugin in self.valid_plugins:
+			plugin_name = plugin.split(' ')[0].strip('\n')
+			logging.info('[{0}] Queuing plugin: {1}'.format(self.basename, plugin_name))
+	
+
+	def populate_valid_plugins(self, plugins_list):
+		"""
+		Create list of valid Volatility plugins to run against an image.
+		"""
 		if plugins_list:
 			with open(plugins_list, 'r') as ifile:
 				for line in ifile:
 					self.valid_plugins.append(line)
 		else:
+			valid_plugins = []
 			OSType = re.match('(WinXP)|(Win2003)', self.profile)
 			if OSType is not None:
-				self.valid_plugins = BASE_PLUGINS + XP2003_PLUGINS
+				valid_plugins = BASE_PLUGINS + OLDER_WINDOWS_PLUGINS
 			else:
-				self.valid_plugins = BASE_PLUGINS + VISTA_WIN2008_WIN7_PLUGINS
-	
-		logging.info('[{0}] Selected Profile: {1}'.format(self.basename, self.profile))
-		logging.info('[{0}] Selected KDBG Offset: {1}'.format(self.basename, self.kdbg))
+				valid_plugins = BASE_PLUGINS + NEWER_WINDOWS_PLUGINS
+			
+			# If we're not extracting artifacts, remove all plugins that require a dump directory
+			if not self.extract_artifacts:
+				valid_plugins = [plugin for plugin in valid_plugins if DUMP_DIR_FLAG not in plugin]
 
-		for plugin in self.valid_plugins:
-			logging.info('[{0}] Queuing plugin: {1}'.format(self.basename, plugin.strip('\n')))
+			self.valid_plugins = valid_plugins
 
 
 class Task:
@@ -229,12 +251,7 @@ def generate_future_tasks(image):
 		- Task containing command to run a plugin.
 	"""
 	for plugin in image.valid_plugins:
-		if len(plugin.split(' ')) > 1:
-			plugin_name = plugin.split(' ')[0].strip('\n')
-			plugin_flags = [arg.strip('\n') for arg in plugin.split(' ')[1:]]
-		else:
-			plugin_name = plugin.strip('\n')
-			plugin_flags = []
+		plugin_name, plugin_flags = process_plugin(image, plugin)
 
 		output_filename = f'{image.image_name}_{plugin_name}.txt'
 		output_path = os.path.join(image.output_directory, output_filename)
@@ -264,23 +281,67 @@ def execute_task(task):
 		task.plugin, task.output_path))
 
 
+def process_plugin(image, plugin):
+	"""
+	Parse name and flags from a particular plugin, and perform any necessary pre-processing.
+
+	Returns:
+		- plugin_name
+		- plugin_flags
+	"""
+	if len(plugin.split(' ')) == 1:
+		plugin_name = plugin.strip('\n')
+		plugin_flags = []
+		return plugin_name, plugin_flags
+	
+	plugin_name = plugin.split(' ')[0].strip('\n')
+	flags = [arg.strip('\n') for arg in plugin.split(' ')[1:]]
+		
+	plugin_flags = []
+	for flag in flags:
+
+		# If any plugins require a dump directory, create it and append the name to the plugin flag
+		if flag == DUMP_DIR_FLAG:
+			dump_dir_path = create_dump_dir(plugin_name, image)
+			flag += dump_dir_path
+
+		plugin_flags.append(flag)
+
+	return plugin_name, plugin_flags
+
+
+def create_dump_dir(plugin_name, image):
+	"""
+	Create a dump directory for a particular plugin and image, and return the new directory path.
+	"""
+	dump_dir = f'{image.image_name}_{plugin_name}_results'
+	dump_dir_path = os.path.join(image.output_directory, dump_dir)
+	if not os.path.exists(dump_dir_path):
+		os.makedirs(dump_dir_path)
+	return dump_dir_path
+
+
 def main():
-	parser = argparse.ArgumentParser(description='Run all available Volatility plugins on a target image file.',
-		epilog='''The first suggested profile will be automatically selected.
-			All available plugins will be selected for the suggested profile.
-			If the output directory does not exist, it will be created.
-			The output files with follow a $plugin_$filename format.''')
+	parser = argparse.ArgumentParser(description='Run multiple Volatility plugins against target image file(s) simultaneously.',
+		epilog='''If no profile or KDBG offset is provided, profile auto-detection will be run (using '
+				 'Volatility's imageinfo plugin). The first profile returned will be used.''')
+	parser.add_argument('--output_dir', help='Path to output directory.')
 	parser.add_argument('--invocation', help='Provide the desired invocation to execute Volatility. Defaults to "vol.py".')
 	parser.add_argument('--readlist', help='Flag to read from a list of plugins rather than auto-detecting valid plugins.')
-	parser.add_argument('--profile', help='Provide a valid profile and bypass auto-detection.')
-	parser.add_argument('--kdbgoffset', help='Provide a valid kdbg offset and bypass auto-detection.')
-	parser.add_argument('--output_dir', help='Path to output directory.')
+	parser.add_argument('--profile', help='Provide a valid profile along with a valid kdbg '
+						'offset to bypass auto-detection.')
+	parser.add_argument('--kdbg', help='Provide a valid kdbg offset (starting with "0x") along '
+						'with a valid profile to bypass auto-detection.')
+	parser.add_argument('--extract_artifacts',
+						action='store_true',
+						help='Include plugins that dump all processes, drivers and files from memory.')
 	parser.add_argument('image_files', help='Path to memory image(s)', nargs='+')
 	args = parser.parse_args()
 	logging.info(f'Bulk Volatility Scanner running over {len(args.image_files)} image(s).')
 
 	invocation = args.invocation if args.invocation else DEFAULT_VOL_INVOCATION
 	output_dir = args.output_dir if args.output_dir else DEFAULT_OUTPUT_DIR
+	extract_artifacts = True if args.extract_artifacts else DEFAULT_EXTRACT_ARTIFACTS
 
 	master_output_directory = os.path.abspath(output_dir)
 	if not os.path.exists(master_output_directory):
@@ -288,15 +349,24 @@ def main():
 	logging.info(f'Output will be saved to: {master_output_directory}')
 
 	profile = args.profile
-	kdbg = args.kdbgoffset
+	kdbg = args.kdbg
 	plugins_list = args.readlist
 	tasks = []
 	workers = []
 
 	# Determine profiles and queue tasks for each memory image
+	images = []
 	for image_path in args.image_files:
-		image = MemoryImage(invocation, image_path, profile, kdbg, 
-			master_output_directory, plugins_list)
+		image = MemoryImage(
+			invocation,
+			image_path,
+			profile,
+			kdbg, 
+			master_output_directory,
+			plugins_list,
+			extract_artifacts
+		)
+		images.append(image)
 		tasks.extend([task for task in generate_future_tasks(image)])
 
 	# While pending tasks exist or workers are still processing:
